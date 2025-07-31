@@ -1,0 +1,6 @@
+env/
+caries/
+without_caries/
+val_caries/
+val_without_caries/
+best_caries_model.pth
