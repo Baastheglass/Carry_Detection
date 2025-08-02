@@ -5,98 +5,475 @@ import torchvision.transforms as transforms
 from PIL import Image
 import numpy as np
 import matplotlib.pyplot as plt
-import cv2
 import os
-from model import CariesDetectionNet, GradCAM, get_transforms
+from model import CariesDetectionNet, get_transforms
 
 # Page configuration
 st.set_page_config(
     page_title="Dental Caries Detection",
     page_icon="🦷",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="centered",
+    initial_sidebar_state="collapsed"
 )
 
-# Custom CSS for better styling
+# Initialize session state for app reset
+if 'show_results' not in st.session_state:
+    st.session_state.show_results = False
+if 'uploaded_file_key' not in st.session_state:
+    st.session_state.uploaded_file_key = 0
+
+# Premium Dark Theme with Sophisticated Elegance
 st.markdown("""
 <style>
-    .main-header {
-        font-size: 3rem;
-        color: #2E86AB;
-        text-align: center;
-        margin-bottom: 2rem;
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+    
+    .main {
+        padding-top: 1rem;
+        font-family: 'Inter', sans-serif;
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+        color: #e2e8f0;
     }
-    .sub-header {
-        font-size: 1.5rem;
-        color: #A23B72;
+    
+    .stApp {
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    }
+    
+    .hero-section {
+        background: linear-gradient(135deg, #1e40af 0%, #7c3aed 100%);
+        padding: 3.5rem 2rem;
+        border-radius: 24px;
+        margin-bottom: 2rem;
+        text-align: center;
+        box-shadow: 0 20px 50px rgba(30, 64, 175, 0.3);
+        border: 1px solid rgba(30, 64, 175, 0.2);
+    }
+    
+    .hero-title {
+        color: #f1f5f9;
+        font-size: 3.2rem;
+        font-weight: 800;
+        margin-bottom: 0.5rem;
+        text-shadow: 2px 2px 8px rgba(0,0,0,0.4);
+        letter-spacing: -0.02em;
+    }
+    
+    .hero-subtitle {
+        color: #e2e8f0;
+        font-size: 1.3rem;
+        font-weight: 300;
+        margin-bottom: 1rem;
+        letter-spacing: 0.02em;
+    }
+    
+    .hero-description {
+        color: #cbd5e1;
+        font-size: 1.05rem;
+        max-width: 650px;
+        margin: 0 auto;
+        line-height: 1.7;
+        font-weight: 400;
+    }
+    
+    .upload-section {
+        background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+        padding: 3rem;
+        border-radius: 24px;
+        box-shadow: 0 16px 40px rgba(0,0,0,0.4);
+        margin: 2rem 0;
+        border: 1px solid #334155;
+    }
+    
+    .image-info {
+        background: linear-gradient(135deg, #334155 0%, #475569 100%);
+        padding: 2rem 2.5rem;
+        border-radius: 18px;
+        margin: 1.5rem 0;
+        border-left: 6px solid #3b82f6;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+        color: #e2e8f0;
+    }
+    
+    .result-positive {
+        background: linear-gradient(135deg, #2d1b3d 0%, #3f1f47 100%);
+        border: 3px solid #ef4444;
+        padding: 3rem;
+        border-radius: 24px;
+        text-align: center;
+        margin: 2rem 0;
+        box-shadow: 0 20px 50px rgba(239, 68, 68, 0.25);
+        position: relative;
+        overflow: hidden;
+        color: #fef2f2;
+    }
+    
+    .result-positive::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 6px;
+        background: linear-gradient(90deg, #ef4444, #dc2626, #b91c1c);
+    }
+    
+    .result-negative {
+        background: linear-gradient(135deg, #1a2e1a 0%, #2d4a2d 100%);
+        border: 3px solid #22c55e;
+        padding: 3rem;
+        border-radius: 24px;
+        text-align: center;
+        margin: 2rem 0;
+        box-shadow: 0 20px 50px rgba(34, 197, 94, 0.25);
+        position: relative;
+        overflow: hidden;
+        color: #f0fdf4;
+    }
+    
+    .result-negative::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 6px;
+        background: linear-gradient(90deg, #22c55e, #16a34a, #15803d);
+    }
+    
+    .confidence-score {
+        font-size: 2.5rem;
+        font-weight: 800;
+        margin: 1.2rem 0;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        letter-spacing: -0.02em;
+    }
+    
+    .probability-score {
+        font-size: 1.2rem;
+        font-weight: 500;
+        opacity: 0.9;
         margin-bottom: 1rem;
     }
-    .prediction-box {
-        background-color: #f0f2f6;
-        padding: 1rem;
-        border-radius: 10px;
-        border-left: 5px solid #2E86AB;
-        margin: 1rem 0;
+    
+    .analysis-section {
+        background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+        padding: 3rem;
+        border-radius: 24px;
+        box-shadow: 0 16px 40px rgba(0,0,0,0.4);
+        margin: 2rem 0;
+        border: 1px solid #334155;
     }
-    .caries-positive {
-        background-color: #ffe6e6;
-        border-left-color: #ff4444;
+    
+    .metrics-container {
+        background: linear-gradient(135deg, #334155 0%, #475569 100%);
+        padding: 2.5rem;
+        border-radius: 20px;
+        margin: 2rem 0;
+        border: 1px solid #475569;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.3);
     }
-    .caries-negative {
-        background-color: #e6f7e6;
-        border-left-color: #44ff44;
+    
+    .visualization-container {
+        background: linear-gradient(135deg, #374151 0%, #4b5563 100%);
+        padding: 2.5rem;
+        border-radius: 20px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+        margin: 2rem 0;
+        border: 1px solid #4b5563;
     }
-    .confidence-high {
-        color: #2E86AB;
-        font-weight: bold;
+    
+    .recommendation-card {
+        background: linear-gradient(135deg, #334155 0%, #475569 100%);
+        padding: 2rem;
+        border-radius: 18px;
+        margin: 1.5rem 0;
+        border-left: 5px solid #3b82f6;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+        color: #e2e8f0;
     }
-    .confidence-medium {
-        color: #F18F01;
-        font-weight: bold;
+    
+    .footer-section {
+        text-align: center;
+        padding: 3rem;
+        background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+        border-radius: 24px;
+        margin-top: 3rem;
+        border-top: 6px solid #3b82f6;
+        box-shadow: 0 16px 40px rgba(0,0,0,0.4);
+        color: #cbd5e1;
     }
-    .confidence-low {
-        color: #C73E1D;
-        font-weight: bold;
+    
+    .tech-badge {
+        display: inline-block;
+        background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+        color: white;
+        padding: 0.5rem 1.2rem;
+        border-radius: 30px;
+        font-size: 0.9rem;
+        font-weight: 600;
+        margin: 0.4rem;
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+        letter-spacing: 0.02em;
+    }
+    
+    .reset-section {
+        background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+        padding: 2.5rem;
+        border-radius: 20px;
+        margin: 2rem 0;
+        text-align: center;
+        border: 1px solid #334155;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+    }
+    
+    .section-divider {
+        height: 2px;
+        background: linear-gradient(90deg, transparent, #475569, transparent);
+        margin: 3rem 0;
+    }
+    
+    /* Streamlit component styling */
+    .stFileUploader > div > div {
+        background: linear-gradient(135deg, #374151 0%, #4b5563 100%) !important;
+        border: 2px dashed #6b7280 !important;
+        border-radius: 16px !important;
+        color: #e2e8f0 !important;
+    }
+    
+    .stFileUploader div[data-testid="stFileUploaderDropzone"] {
+        background: linear-gradient(135deg, #374151 0%, #4b5563 100%) !important;
+        border: 2px dashed #6b7280 !important;
+        border-radius: 16px !important;
+        color: #e2e8f0 !important;
+    }
+    
+    .stFileUploader div[data-testid="stFileUploaderDropzone"] > div {
+        background: linear-gradient(135deg, #374151 0%, #4b5563 100%) !important;
+        color: #e2e8f0 !important;
+    }
+    
+    /* Force dark background on all file uploader elements */
+    .stFileUploader {
+        background: transparent !important;
+    }
+    
+    .stFileUploader > div {
+        background: linear-gradient(135deg, #374151 0%, #4b5563 100%) !important;
+        border: 2px dashed #6b7280 !important;
+        border-radius: 16px !important;
+    }
+    
+    .stFileUploader section {
+        background: linear-gradient(135deg, #374151 0%, #4b5563 100%) !important;
+        border: 2px dashed #6b7280 !important;
+        border-radius: 16px !important;
+        color: #e2e8f0 !important;
+    }
+    
+    .stFileUploader section > div {
+        background: linear-gradient(135deg, #374151 0%, #4b5563 100%) !important;
+        color: #e2e8f0 !important;
+    }
+    
+    /* File uploader text and icon styling */
+    .stFileUploader small {
+        color: #cbd5e1 !important;
+    }
+    
+    .stFileUploader p {
+        color: #e2e8f0 !important;
+    }
+    
+    .stFileUploader svg {
+        fill: #6b7280 !important;
+    }
+    
+    /* Browse files button styling */
+    .stFileUploader button {
+        background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%) !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 12px !important;
+        font-weight: 600 !important;
+        box-shadow: 0 4px 16px rgba(59, 130, 246, 0.4) !important;
+        transition: all 0.3s ease !important;
+    }
+    
+    .stFileUploader button:hover {
+        transform: translateY(-2px) !important;
+        box-shadow: 0 8px 24px rgba(59, 130, 246, 0.5) !important;
+    }
+    
+    /* Hide the top header bar */
+    header[data-testid="stHeader"] {
+        display: none !important;
+    }
+    
+    .stApp > header {
+        display: none !important;
+    }
+    
+    /* Hide the deployment toolbar */
+    .stDeployButton {
+        display: none !important;
+    }
+    
+    .css-1rs6os {
+        display: none !important;
+    }
+    
+    .css-17eq0hr {
+        display: none !important;
+    }
+    
+    .stButton > button {
+        background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+        color: white;
+        border: none;
+        border-radius: 12px;
+        font-weight: 600;
+        box-shadow: 0 4px 16px rgba(59, 130, 246, 0.4);
+        transition: all 0.3s ease;
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(59, 130, 246, 0.5);
+    }
+    
+    .stProgress > div > div {
+        background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+    }
+    
+    .stMetric {
+        background: linear-gradient(135deg, #374151 0%, #4b5563 100%) !important;
+        padding: 1.5rem;
+        border-radius: 12px;
+        border: 1px solid #4b5563;
+        color: #e2e8f0 !important;
+    }
+    
+    .stSuccess {
+        background: linear-gradient(135deg, #1a2e1a 0%, #2d4a2d 100%) !important;
+        border: 1px solid #22c55e !important;
+        color: #dcfce7 !important;
+    }
+    
+    .stSuccess > div {
+        color: #dcfce7 !important;
+    }
+    
+    .stError {
+        background: linear-gradient(135deg, #2d1b3d 0%, #3f1f47 100%) !important;
+        border: 1px solid #ef4444 !important;
+        color: #fef2f2 !important;
+    }
+    
+    .stError > div {
+        color: #fef2f2 !important;
+    }
+    
+    .stWarning {
+        background: linear-gradient(135deg, #3d2914 0%, #4a3619 100%) !important;
+        border: 1px solid #f59e0b !important;
+        color: #fef3c7 !important;
+    }
+    
+    .stWarning > div {
+        color: #fef3c7 !important;
+    }
+    
+    .stInfo {
+        background: linear-gradient(135deg, #1e293b 0%, #334155 100%) !important;
+        border: 1px solid #3b82f6 !important;
+        color: #dbeafe !important;
+    }
+    
+    .stInfo > div {
+        color: #dbeafe !important;
+    }
+    
+    h1, h2, h3, h4, h5, h6 {
+        color: #f1f5f9 !important;
+    }
+    
+    p {
+        color: #e2e8f0 !important;
+    }
+    
+    /* Enhanced text visibility */
+    .stMarkdown, .stMarkdown p, .stMarkdown div {
+        color: #e2e8f0 !important;
+    }
+    
+    .stText, .stCaption {
+        color: #e2e8f0 !important;
+    }
+    
+    .stFileUploader label {
+        color: #e2e8f0 !important;
+    }
+    
+    .stSelectbox label, .stTextInput label, .stTextArea label {
+        color: #e2e8f0 !important;
+    }
+    
+    /* Metric labels and values */
+    .metric-container label {
+        color: #cbd5e1 !important;
+    }
+    
+    .metric-container div {
+        color: #f1f5f9 !important;
+    }
+    
+    /* Sidebar text */
+    .css-1d391kg {
+        color: #e2e8f0 !important;
+    }
+    
+    /* General streamlit text */
+    div[data-testid="stMarkdownContainer"] {
+        color: #e2e8f0 !important;
+    }
+    
+    /* File uploader text */
+    .stFileUploader div {
+        color: #e2e8f0 !important;
+    }
+    
+    /* Progress text */
+    .stProgress div {
+        color: #e2e8f0 !important;
+    }
+    
+    /* Spinner text */
+    .stSpinner div {
+        color: #e2e8f0 !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
 @st.cache_resource
 def load_model():
-    """Load the trained caries detection model"""
-    try:
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        model = CariesDetectionNet(num_classes=2, pretrained=False, enable_localization=True)
-        
-        # Try to load the trained model
-        if os.path.exists('best_caries_model.pth'):
-            model.load_state_dict(torch.load('best_caries_model.pth', map_location=device))
-            model.eval()
-            st.success("✅ Trained model loaded successfully!")
-        else:
-            st.warning("⚠️ Trained model not found. Using untrained model for demonstration.")
-        
-        model.to(device)
-        return model, device
-    except Exception as e:
-        st.error(f"❌ Error loading model: {str(e)}")
-        return None, None
+    """Load the trained model"""
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = CariesDetectionNet(num_classes=2, pretrained=False, enable_localization=True)
+    
+    if os.path.exists('best_caries_model.pth'):
+        model.load_state_dict(torch.load('best_caries_model.pth', map_location=device))
+        model.eval()
+    
+    model.to(device)
+    return model, device
 
-def preprocess_image(image):
-    """Preprocess uploaded image for model prediction"""
+def analyze_image(model, image, device):
+    """Analyze image for caries"""
     _, val_transform = get_transforms()
     
-    # Convert to RGB if needed
     if image.mode != 'RGB':
         image = image.convert('RGB')
     
-    # Apply transforms
-    input_tensor = val_transform(image).unsqueeze(0)
-    return input_tensor, np.array(image)
-
-def predict_caries(model, input_tensor, device):
-    """Make prediction on preprocessed image"""
-    input_tensor = input_tensor.to(device)
+    input_tensor = val_transform(image).unsqueeze(0).to(device)
     
     with torch.no_grad():
         outputs = model(input_tensor)
@@ -104,227 +481,295 @@ def predict_caries(model, input_tensor, device):
         predicted_class = torch.argmax(probabilities, dim=1).item()
         confidence = probabilities[0, predicted_class].item()
         
-        # Get attention map if available
         attention_map = None
         if 'attention' in outputs:
             attention_map = outputs['attention'][0, 0].cpu().numpy()
     
-    return predicted_class, confidence, attention_map, probabilities
+    return predicted_class, confidence, probabilities[0][1].item(), attention_map
 
-def create_visualization(original_image, attention_map, predicted_class, confidence):
-    """Create visualization plots"""
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+def show_results(image, predicted_class, confidence, caries_prob, attention_map):
+    """Display analysis results with elegant styling and organized layout"""
     
-    # Original image
-    axes[0].imshow(original_image)
-    axes[0].set_title('Original Radiograph', fontsize=14, fontweight='bold')
-    axes[0].axis('off')
-    
-    # Attention map
-    if attention_map is not None:
-        im1 = axes[1].imshow(attention_map, cmap='hot')
-        axes[1].set_title('AI Attention Map\n(Regions of Interest)', fontsize=14, fontweight='bold')
-        axes[1].axis('off')
-        plt.colorbar(im1, ax=axes[1], fraction=0.046, pad=0.04)
+    # Result header with enhanced styling
+    if predicted_class == 1:
+        st.markdown(f"""
+        <div class="result-positive">
+            <h2>🚨 Caries Detected</h2>
+            <div class="confidence-score">{confidence:.0%}</div>
+            <div class="probability-score">Caries Probability: {caries_prob:.0%}</div>
+        </div>
+        """, unsafe_allow_html=True)
         
-        # Overlay
-        axes[2].imshow(original_image, alpha=0.7)
-        axes[2].imshow(attention_map, cmap='hot', alpha=0.4)
-        axes[2].set_title(f'Overlay Visualization\nPrediction: {"Caries Detected" if predicted_class == 1 else "No Caries"}\nConfidence: {confidence:.1%}', 
-                         fontsize=14, fontweight='bold')
-        axes[2].axis('off')
-    else:
-        axes[1].text(0.5, 0.5, 'Attention map\nnot available', 
-                    horizontalalignment='center', verticalalignment='center',
-                    transform=axes[1].transAxes, fontsize=12)
-        axes[1].axis('off')
-        
-        axes[2].imshow(original_image)
-        axes[2].set_title(f'Prediction: {"Caries Detected" if predicted_class == 1 else "No Caries"}\nConfidence: {confidence:.1%}', 
-                         fontsize=14, fontweight='bold')
-        axes[2].axis('off')
-    
-    plt.tight_layout()
-    return fig
-
-def main():
-    # Header
-    st.markdown('<h1 class="main-header">🦷 Dental Caries Detection System</h1>', unsafe_allow_html=True)
-    st.markdown("Upload a dental radiograph to detect the presence of caries using AI")
-    
-    # Sidebar
-    with st.sidebar:
-        st.markdown('<h2 class="sub-header">📋 Model Information</h2>', unsafe_allow_html=True)
-        
-        # Load model
-        model, device = load_model()
-        
-        if model is not None:
-            st.markdown(f"**Device:** {device}")
-            st.markdown("**Model:** ResNet50-based CNN")
-            st.markdown("**Features:** Classification + Localization")
-            
-            st.markdown('<h3 class="sub-header">🎯 How it works</h3>', unsafe_allow_html=True)
+        # Professional recommendations in organized cards
+        if confidence > 0.8:
             st.markdown("""
-            1. **Upload** a dental radiograph
-            2. **AI Analysis** using deep learning
-            3. **Classification** (Caries/No Caries)
-            4. **Attention Map** shows focus areas
-            5. **Confidence Score** indicates certainty
-            """)
-            
-            st.markdown('<h3 class="sub-header">📊 Interpretation Guide</h3>', unsafe_allow_html=True)
-            st.markdown("""
-            - **Red areas** in attention map indicate potential caries
-            - **High confidence** (>80%): Very reliable
-            - **Medium confidence** (60-80%): Good reliability
-            - **Low confidence** (<60%): Requires expert review
-            """)
-        else:
-            st.error("Model failed to load. Please check the model file.")
-            return
-    
-    # Main content area
-    col1, col2 = st.columns([1, 1])
-    
-    with col1:
-        st.markdown('<h2 class="sub-header">📁 Upload Radiograph</h2>', unsafe_allow_html=True)
-        
-        uploaded_file = st.file_uploader(
-            "Choose a dental radiograph image",
-            type=['png', 'jpg', 'jpeg', 'bmp', 'tiff'],
-            help="Upload a clear dental radiograph for analysis"
-        )
-        
-        if uploaded_file is not None:
-            # Display uploaded image
-            image = Image.open(uploaded_file)
-            st.image(image, caption="Uploaded Radiograph", use_column_width=True)
-            
-            # Add image information
-            st.markdown(f"**Image Details:**")
-            st.markdown(f"- Size: {image.size[0]} × {image.size[1]} pixels")
-            st.markdown(f"- Mode: {image.mode}")
-            st.markdown(f"- File size: {len(uploaded_file.getvalue())/1024:.1f} KB")
-    
-    with col2:
-        if uploaded_file is not None:
-            st.markdown('<h2 class="sub-header">🔍 AI Analysis Results</h2>', unsafe_allow_html=True)
-            
-            # Process image and make prediction
-            with st.spinner("🤖 Analyzing radiograph..."):
-                input_tensor, original_image = preprocess_image(image)
-                predicted_class, confidence, attention_map, probabilities = predict_caries(model, input_tensor, device)
-            
-            # Display prediction results
-            prediction_text = "Caries Detected" if predicted_class == 1 else "No Caries Detected"
-            confidence_level = "high" if confidence > 0.8 else "medium" if confidence > 0.6 else "low"
-            box_class = "caries-positive" if predicted_class == 1 else "caries-negative"
-            
-            st.markdown(f"""
-            <div class="prediction-box {box_class}">
-                <h3>🎯 Prediction: {prediction_text}</h3>
-                <p class="confidence-{confidence_level}">Confidence: {confidence:.1%}</p>
-                <p><strong>Caries Probability:</strong> {probabilities[0][1].item():.1%}</p>
-                <p><strong>No Caries Probability:</strong> {probabilities[0][0].item():.1%}</p>
+            <div class="recommendation-card">
+                <h4>🏥 High Confidence Detection</h4>
+                <p><strong>Recommendation:</strong> Schedule dental appointment immediately</p>
+                <p><em>Urgent professional evaluation recommended</em></p>
             </div>
             """, unsafe_allow_html=True)
-            
-            # Risk assessment
-            if predicted_class == 1:
-                if confidence > 0.8:
-                    st.error("🚨 **High Risk**: Strong indication of caries. Immediate dental consultation recommended.")
-                elif confidence > 0.6:
-                    st.warning("⚠️ **Medium Risk**: Possible caries detected. Dental examination advised.")
-                else:
-                    st.info("ℹ️ **Low Confidence**: Unclear indication. Professional evaluation needed.")
-            else:
-                if confidence > 0.8:
-                    st.success("✅ **Low Risk**: No clear signs of caries detected.")
-                else:
-                    st.info("ℹ️ **Uncertain**: Results unclear. Regular dental checkup recommended.")
+        elif confidence > 0.6:
+            st.markdown("""
+            <div class="recommendation-card">
+                <h4>⚠️ Moderate Confidence Detection</h4>
+                <p><strong>Recommendation:</strong> Consider dental examination soon</p>
+                <p><em>Professional consultation advised within 1-2 weeks</em></p>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown("""
+            <div class="recommendation-card">
+                <h4>🔍 Low Confidence Detection</h4>
+                <p><strong>Recommendation:</strong> Monitor and consider professional evaluation</p>
+                <p><em>Regular dental checkups recommended</em></p>
+            </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.markdown(f"""
+        <div class="result-negative">
+            <h2>✅ No Caries Detected</h2>
+            <div class="confidence-score">{confidence:.0%}</div>
+            <div class="probability-score">Caries Probability: {caries_prob:.0%}</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        if confidence > 0.8:
+            st.markdown("""
+            <div class="recommendation-card">
+                <h4>🦷 Excellent Oral Health</h4>
+                <p><strong>Recommendation:</strong> Continue regular oral hygiene routine</p>
+                <p><em>Maintain current dental care practices</em></p>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown("""
+            <div class="recommendation-card">
+                <h4>🔍 Good Oral Health</h4>
+                <p><strong>Recommendation:</strong> Maintain oral health with regular checkups</p>
+                <p><em>Continue preventive care routine</em></p>
+            </div>
+            """, unsafe_allow_html=True)
     
-    # Visualization section
-    if uploaded_file is not None:
-        st.markdown('<h2 class="sub-header">📊 Detailed Visualization</h2>', unsafe_allow_html=True)
+    # Section divider
+    st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+    
+    # Enhanced visualization with organized layout
+    st.markdown('<div class="analysis-section">', unsafe_allow_html=True)
+    
+    if attention_map is not None:
+        st.markdown("### 🔬 **Detailed AI Analysis**")
         
-        # Create and display visualization
-        fig = create_visualization(original_image, attention_map, predicted_class, confidence)
+        # Organized visualization container
+        st.markdown('<div class="visualization-container">', unsafe_allow_html=True)
+        
+        # Create professional visualization with dark theme
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7))
+        fig.patch.set_facecolor('#374151')
+        
+        # Original image with dark theme styling
+        ax1.imshow(image)
+        ax1.set_title('Original X-ray Image', fontsize=16, fontweight='bold', pad=25, color='#e2e8f0')
+        ax1.axis('off')
+        ax1.set_facecolor('#374151')
+        
+        # Attention overlay with dark theme visualization
+        ax2.imshow(image, alpha=0.85)
+        im = ax2.imshow(attention_map, cmap='hot', alpha=0.65)
+        ax2.set_title('AI Focus Areas (Heat Map)', fontsize=16, fontweight='bold', pad=25, color='#e2e8f0')
+        ax2.axis('off')
+        ax2.set_facecolor('#374151')
+        
+        # Enhanced colorbar with dark theme
+        cbar = plt.colorbar(im, ax=ax2, shrink=0.8, aspect=20)
+        cbar.set_label('Attention Intensity', fontsize=12, color='#e2e8f0')
+        cbar.ax.tick_params(labelsize=10, colors='#e2e8f0')
+        cbar.ax.set_facecolor('#4b5563')
+        
+        plt.tight_layout(pad=2.0)
         st.pyplot(fig)
+        plt.close()
         
-        # Additional analysis tabs
-        tab1, tab2, tab3 = st.tabs(["🔍 Detailed Analysis", "📈 Confidence Metrics", "💡 Recommendations"])
+        st.markdown('</div>', unsafe_allow_html=True)
         
-        with tab1:
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("**Analysis Summary:**")
-                st.markdown(f"- **Primary Prediction:** {prediction_text}")
-                st.markdown(f"- **Confidence Level:** {confidence_level.title()}")
-                st.markdown(f"- **Processing Time:** < 1 second")
-                
-            with col2:
-                st.markdown("**Technical Details:**")
-                st.markdown(f"- **Model Architecture:** ResNet50 + Custom Heads")
-                st.markdown(f"- **Input Resolution:** 224×224 pixels")
-                st.markdown(f"- **Attention Map Available:** {'Yes' if attention_map is not None else 'No'}")
+        # Organized metrics display
+        st.markdown('<div class="metrics-container">', unsafe_allow_html=True)
+        st.markdown("#### 📊 **Analysis Metrics**")
         
-        with tab2:
-            # Confidence visualization
-            fig_conf, ax = plt.subplots(1, 1, figsize=(8, 4))
-            classes = ['No Caries', 'Caries']
-            probs = [probabilities[0][0].item(), probabilities[0][1].item()]
-            colors = ['#44ff44', '#ff4444']
-            
-            bars = ax.bar(classes, probs, color=colors, alpha=0.7)
-            ax.set_ylabel('Probability')
-            ax.set_title('Class Probabilities')
-            ax.set_ylim(0, 1)
-            
-            # Add value labels on bars
-            for bar, prob in zip(bars, probs):
-                height = bar.get_height()
-                ax.text(bar.get_x() + bar.get_width()/2., height + 0.01,
-                       f'{prob:.1%}', ha='center', va='bottom', fontweight='bold')
-            
-            plt.tight_layout()
-            st.pyplot(fig_conf)
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric(
+                label="🎯 Prediction Confidence", 
+                value=f"{confidence:.1%}",
+                help="AI model's confidence in the prediction"
+            )
+        with col2:
+            st.metric(
+                label="🦷 Caries Probability", 
+                value=f"{caries_prob:.1%}",
+                help="Probability of caries presence"
+            )
+        with col3:
+            attention_strength = np.mean(attention_map) if attention_map is not None else 0
+            st.metric(
+                label="🔬 Attention Strength", 
+                value=f"{attention_strength:.3f}",
+                help="Average attention map intensity"
+            )
         
-        with tab3:
-            st.markdown("**Clinical Recommendations:**")
+        st.markdown('</div>', unsafe_allow_html=True)
             
-            if predicted_class == 1:
-                st.markdown("""
-                - 🏥 **Schedule immediate dental consultation**
-                - 🔍 **Request professional X-ray analysis**
-                - 🦷 **Consider preventive treatment options**
-                - 📅 **Follow up within 1-2 weeks**
-                """)
-            else:
-                st.markdown("""
-                - ✅ **Continue regular oral hygiene routine**
-                - 📅 **Maintain scheduled dental checkups**
-                - 🦷 **Monitor for any changes or symptoms**
-                - 🍭 **Limit sugary foods and drinks**
-                """)
-            
-            st.markdown("**Important Notice:**")
-            st.warning("⚠️ This AI system is designed to assist dental professionals and should not replace professional medical diagnosis. Always consult with a qualified dentist for proper evaluation and treatment.")
+    else:
+        st.markdown("### 📷 **X-ray Analysis**")
+        
+        st.markdown('<div class="visualization-container">', unsafe_allow_html=True)
+        st.image(image, caption="Uploaded Dental X-ray", use_column_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Basic metrics for cases without attention map
+        st.markdown('<div class="metrics-container">', unsafe_allow_html=True)
+        st.markdown("#### 📊 **Analysis Metrics**")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric(
+                label="🎯 Prediction Confidence", 
+                value=f"{confidence:.1%}",
+                help="AI model's confidence in the prediction"
+            )
+        with col2:
+            st.metric(
+                label="🦷 Caries Probability", 
+                value=f"{caries_prob:.1%}",
+                help="Probability of caries presence"
+            )
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    # Sample images section
-    if uploaded_file is None:
-        st.markdown('<h2 class="sub-header">📂 Try Sample Images</h2>', unsafe_allow_html=True)
-        st.markdown("No image uploaded yet. You can try the system with sample images from your dataset:")
+def reset_app():
+    """Reset the app state to allow new analysis"""
+    st.session_state.show_results = False
+    st.session_state.uploaded_file_key += 1
+    st.rerun()
+
+def main():
+    # Professional Hero Section
+    st.markdown("""
+    <div class="hero-section">
+        <div class="hero-title">🦷 AI Dental Caries Detection</div>
+        <div class="hero-subtitle">Advanced Machine Learning for Dental Diagnostics</div>
+        <div class="hero-description">
+            Leverage cutting-edge artificial intelligence to detect dental caries with high precision. 
+            Our ResNet50-based deep learning model provides instant analysis with confidence scoring and attention mapping.
+        </div>
+        <br>
+        <div>
+            <span class="tech-badge">PyTorch</span>
+            <span class="tech-badge">Computer Vision</span>
+            <span class="tech-badge">ResNet50</span>
+            <span class="tech-badge">Attention Mechanism</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Load model with professional error handling
+    try:
+        with st.spinner("🤖 Loading AI model..."):
+            model, device = load_model()
+        st.success("✅ AI model loaded successfully")
+    except Exception as e:
+        st.error("❌ Could not load AI model. Please check model file.")
+        st.exception(e)
+        return
+    
+    # Professional Upload Section
+    st.markdown('<div class="upload-section">', unsafe_allow_html=True)
+    st.markdown("### 📤 **Upload Dental X-ray**")
+    st.markdown("*Supported formats: PNG, JPG, JPEG, BMP, TIFF*")
+    
+    uploaded_file = st.file_uploader(
+        "Choose an X-ray image",
+        type=['png', 'jpg', 'jpeg', 'bmp', 'tiff'],
+        help="Upload a clear dental X-ray image for AI analysis",
+        key=f"file_uploader_{st.session_state.uploaded_file_key}"
+    )
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    if uploaded_file and not st.session_state.show_results:
+        image = Image.open(uploaded_file)
         
-        # List available sample images
-        sample_dirs = ['val_caries', 'val_without_caries']
-        for dir_name in sample_dirs:
-            if os.path.exists(dir_name):
-                files = [f for f in os.listdir(dir_name) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-                if files:
-                    st.markdown(f"**{dir_name.replace('_', ' ').title()}:**")
-                    for file in files[:3]:  # Show first 3 files
-                        st.markdown(f"- {file}")
+        # Enhanced image info display
+        file_size_kb = len(uploaded_file.getvalue()) / 1024
+        st.markdown(f"""
+        <div class="image-info">
+            <strong>📷 Image Information</strong><br>
+            <strong>File:</strong> {uploaded_file.name}<br>
+            <strong>Dimensions:</strong> {image.size[0]} × {image.size[1]} pixels<br>
+            <strong>Size:</strong> {file_size_kb:.1f} KB<br>
+            <strong>Format:</strong> {image.format}
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Automatic AI Analysis
+        st.markdown("### 🔍 **AI Analysis**")
+        
+        # Progress indicator
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        try:
+            status_text.text("🔄 Preprocessing image...")
+            progress_bar.progress(25)
+            
+            status_text.text("🧠 Running AI inference...")
+            progress_bar.progress(50)
+            
+            predicted_class, confidence, caries_prob, attention_map = analyze_image(model, image, device)
+            
+            status_text.text("📊 Generating results...")
+            progress_bar.progress(75)
+            
+            status_text.text("✅ Analysis complete!")
+            progress_bar.progress(100)
+            
+            # Clear progress indicators
+            progress_bar.empty()
+            status_text.empty()
+            
+            # Show results and mark as shown
+            show_results(np.array(image), predicted_class, confidence, caries_prob, attention_map)
+            st.session_state.show_results = True
+            
+        except Exception as e:
+            st.error("❌ Error during analysis")
+            st.exception(e)
+    
+    # Enhanced reset section - only show when results are displayed
+    if st.session_state.show_results:
+        st.markdown('<div class="reset-section">', unsafe_allow_html=True)
+        st.markdown("### 🔄 **New Analysis**")
+        st.markdown("Ready to analyze another X-ray? Click below to start fresh.")
+        
+        if st.button("🆕 Analyze New Image", type="primary", use_container_width=True):
+            reset_app()
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Professional Footer
+    st.markdown("""
+    <div class="footer-section">
+        <h4>⚠️ Medical Disclaimer</h4>
+        <p><strong>This AI tool is designed for educational and research purposes only.</strong></p>
+        <p>Results should not replace professional dental examination or diagnosis. 
+        Always consult with a qualified dentist for accurate diagnosis and treatment planning.</p>
+        <br>
+        <p style="font-size: 0.9rem; opacity: 0.7; color: #64748b;">
+            Powered by PyTorch • ResNet50 Architecture • Attention Mechanism
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
