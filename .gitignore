@@ -1,6 +1,6 @@
 env/
-caries/
-without_caries/
-val_caries/
-val_without_caries/
-best_caries_model.pth
+dental_data/
+best_vgg16_caries_model.pth
+final_vgg16_caries_model.pth
+__pycache__/
+*.pyc

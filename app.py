@@ -6,7 +6,7 @@ from PIL import Image
 import numpy as np
 import matplotlib.pyplot as plt
 import os
-from model import CariesDetectionNet, get_transforms
+from model import VGG16CariesDetectionNet, get_transforms
 
 # Page configuration
 st.set_page_config(
@@ -457,10 +457,10 @@ st.markdown("""
 def load_model():
     """Load the trained model"""
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = CariesDetectionNet(num_classes=2, pretrained=False, enable_localization=True)
-    
-    if os.path.exists('best_caries_model.pth'):
-        model.load_state_dict(torch.load('best_caries_model.pth', map_location=device))
+    model = VGG16CariesDetectionNet(num_classes=2, pretrained=False, enable_localization=True)
+
+    if os.path.exists('final_vgg16_caries_model.pth'):
+        model.load_state_dict(torch.load('final_vgg16_caries_model.pth', map_location=device))
         model.eval()
     
     model.to(device)
