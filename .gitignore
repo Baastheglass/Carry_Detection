@@ -5,3 +5,5 @@ final_vgg16_caries_model.pth
 best_dental_caries_model.pth
 __pycache__/
 *.pyc
+dataset/
+yolo_dataset/

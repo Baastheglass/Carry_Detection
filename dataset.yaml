@@ -1,0 +1,15 @@
+# Dataset configuration for YOLOv5/YOLOv8
+
+# Paths (absolute or relative to this file)
+path: ./yolo_dataset        # root dataset folder
+train: train/images                    # train images (relative to 'path')
+val: valid/images                        # validation images
+test: test/images                      # optional, for evaluation
+
+# Number of classes
+nc: 2
+
+# Class names
+names: 
+  0: cavity
+  1: tooth
