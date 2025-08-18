@@ -17,3 +17,8 @@ names:
   3: RB4
   4: RC5
   5: RC6
+
+augment:
+  mosaic: 1.0
+  mixup: 0.2
+  copy_paste: 0.3

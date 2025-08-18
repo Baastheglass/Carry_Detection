@@ -5,6 +5,8 @@ import shutil
 from ultralytics import YOLO
 import torch
 from PIL import Image
+import yaml
+import time
 
 def train_yolo_model():
     """Train the YOLO model"""
@@ -12,11 +14,14 @@ def train_yolo_model():
     print(f"Using device: {device}")
     
     model = YOLO('yolov8n.pt')
-    
+    with open('dataset.yaml', 'r') as f:
+        data = yaml.safe_load(f)
+        print(data)
+    time.sleep(10)
     results = model.train(
         data='dataset.yaml',
         epochs=100,
-        imgsz=640,
+        imgsz=1920,
         batch=16,
         device=device,
         patience=10,
