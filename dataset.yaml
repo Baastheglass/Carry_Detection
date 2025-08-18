@@ -7,9 +7,13 @@ val: valid/images                        # validation images
 test: test/images                      # optional, for evaluation
 
 # Number of classes
-nc: 2
+nc: 6
 
 # Class names
-names: 
-  0: cavity
-  1: tooth
+names:
+  0: RA1
+  1: RA2
+  2: RA3
+  3: RB4
+  4: RC5
+  5: RC6

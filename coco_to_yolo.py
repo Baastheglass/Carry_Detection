@@ -15,9 +15,9 @@ def convert_coco_to_yolo(coco_json_path, images_dir, output_dir):
     os.makedirs(f"{output_dir}/images", exist_ok=True)
     os.makedirs(f"{output_dir}/labels", exist_ok=True)
     
-    # Create category mapping (COCO to YOLO class indices)
-    categories = {cat['id']: idx for idx, cat in enumerate(coco_data['categories'][1:])}  # Skip supercategory
-    
+    # Create category mapping (COCO category_id -> YOLO index)
+    categories = {cat['id']: idx for idx, cat in enumerate(coco_data['categories'])}
+
     # Process each image
     for image_info in coco_data['images']:
         image_id = image_info['id']
@@ -53,8 +53,9 @@ def convert_coco_to_yolo(coco_json_path, images_dir, output_dir):
                 norm_width = width / image_width
                 norm_height = height / image_height
                 
-                # YOLO class index (subtract 1 because we skip supercategory)
-                class_id = ann['category_id'] - 1
+                # Map COCO category_id to YOLO class index
+                class_id = categories[ann['category_id']]
+
                 
                 label_file.write(f"{class_id} {center_x:.6f} {center_y:.6f} {norm_width:.6f} {norm_height:.6f}\n")
 
