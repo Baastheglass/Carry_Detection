@@ -8,3 +8,6 @@ __pycache__/
 dataset/
 yolo_dataset/
 yolov8n.pt
+test/
+train/
+valid/

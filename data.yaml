@@ -1,0 +1,26 @@
+# Ultralytics YOLO segmentation dataset configuration derived from your JSON
+
+path: ./dataset  # <-- update this to point to your dataset root
+
+train: images/train  # <-- set your actual training image folder(s)
+val: images/val      # <-- set your actual validation image folder(s)
+# test: images/test  # optional: uncomment and set if you have a test split
+
+nc: 15  # number of classes (from id 0 through 14)
+
+names:
+  0: xray-type
+  1: - collaborate with your team on computer vision projects
+  2: - collect - organize images
+  3: ------------------------------
+  4: Caries - v2 2023-12-22 9-16am
+  5: Negative
+  6: Positive
+  7: RA1
+  8: RA2
+  9: RA3
+  10: RB4
+  11: RC5
+  12: RC6
+  13: Roboflow is an end-to-end computer vision platform that helps you
+  14: This dataset was exported via roboflow.com on December 22- 2023 at 4-17 PM GMT
