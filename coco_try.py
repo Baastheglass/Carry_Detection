@@ -5,7 +5,7 @@ model = YOLO("yolo11n-seg.pt")  # can also use .yaml if building from scratch
 
 # Train the model
 results = model.train(
-    data="dataset/data.yaml",
+    data="data.yaml",
     epochs=100,
     imgsz=640,
     batch=8,       # adjust based on GPU memory

@@ -8,6 +8,9 @@ __pycache__/
 dataset/
 yolo_dataset/
 yolov8n.pt
+yolo11n-seg.pt
 test/
 train/
 valid/
+runs/
+output_segmentation/

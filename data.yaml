@@ -2,16 +2,16 @@
 
 path: ./dataset  # <-- update this to point to your dataset root
 
-train: images/train  # <-- set your actual training image folder(s)
-val: images/val      # <-- set your actual validation image folder(s)
-# test: images/test  # optional: uncomment and set if you have a test split
+train: train  # <-- set your actual training image folder(s)
+val: valid      # <-- set your actual validation image folder(s)
+test: test  # optional: uncomment and set if you have a test split
 
 nc: 15  # number of classes (from id 0 through 14)
 
 names:
   0: xray-type
-  1: - collaborate with your team on computer vision projects
-  2: - collect - organize images
+  1: collaborate with your team on computer vision projects
+  2: collect - organize images
   3: ------------------------------
   4: Caries - v2 2023-12-22 9-16am
   5: Negative
