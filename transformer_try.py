@@ -1,20 +1,21 @@
+import os
+import numpy as np
+import torch
+from PIL import Image
+from torch.utils.data import Dataset
 from transformers import (
     SegformerForSemanticSegmentation,
     SegformerImageProcessor,
     TrainingArguments,
     Trainer
 )
-from datasets import load_dataset
-import numpy as np
 from pycocotools.coco import COCO
-from PIL import Image
-import torch
 
 # -----------------------------
-# 1. Select SegFormer model
+# 1. Select SegFormer model  
 # -----------------------------
 model_name = "nvidia/segformer-b0-finetuned-ade-512-512"
-processor = SegformerImageProcessor.from_pretrained(model_name)
+processor = SegformerImageProcessor.from_pretrained(model_name, reduce_labels=False)
 
 model = SegformerForSemanticSegmentation.from_pretrained(
     model_name,
@@ -23,18 +24,7 @@ model = SegformerForSemanticSegmentation.from_pretrained(
 )
 
 # -----------------------------
-# 2. Load COCO datasets
-# -----------------------------
-train_dataset = load_dataset("coco", data_dir="dataset/train", split="train")
-valid_dataset = load_dataset("coco", data_dir="dataset/valid", split="train")
-test_dataset  = load_dataset("coco", data_dir="dataset/test", split="train")
-
-# Attach COCO annotation handler (train annotations shown here; repeat for val/test if needed)
-coco_train = COCO("dataset/train/_annotations.coco.json")
-coco_val   = COCO("dataset/valid/_annotations.coco.json")
-
-# -----------------------------
-# 3. Utility: Convert COCO anns → mask
+# 2. Utility: Convert COCO anns → mask
 # -----------------------------
 def coco_to_mask(coco, img_id, height, width):
     anns = coco.loadAnns(coco.getAnnIds(imgIds=[img_id]))
@@ -46,63 +36,103 @@ def coco_to_mask(coco, img_id, height, width):
     return mask
 
 # -----------------------------
-# 4. Preprocessing function
+# 3. Custom COCO Dataset
 # -----------------------------
-def preprocess_train(example):
-    image = Image.open(example["file_name"]).convert("RGB")
-    mask = coco_to_mask(coco_train, example["image_id"], image.height, image.width)
+class COCOSegmentationDataset(Dataset):
+    def __init__(self, img_dir, ann_file, processor):
+        self.coco = COCO(ann_file)
+        self.img_dir = img_dir
+        self.ids = list(self.coco.imgs.keys())
+        self.processor = processor
 
-    inputs = processor(images=image, segmentation_maps=mask, return_tensors="pt")
-    inputs["labels"] = inputs["labels"].squeeze(0)  # remove batch dim
-    return inputs
+    def __len__(self):
+        return len(self.ids)
 
-def preprocess_val(example):
-    image = Image.open(example["file_name"]).convert("RGB")
-    mask = coco_to_mask(coco_val, example["image_id"], image.height, image.width)
+    def __getitem__(self, idx):
+        img_id = self.ids[idx]
+        img_info = self.coco.loadImgs(img_id)[0]
+        path = os.path.join(self.img_dir, img_info["file_name"])
 
-    inputs = processor(images=image, segmentation_maps=mask, return_tensors="pt")
-    inputs["labels"] = inputs["labels"].squeeze(0)
-    return inputs
+        # Load image and mask
+        image = Image.open(path).convert("RGB")
+        mask = coco_to_mask(self.coco, img_id, img_info["height"], img_info["width"])
+        
+        # Resize image and mask to consistent size
+        target_size = (512, 512)
+        image = image.resize(target_size, Image.BILINEAR)
+        mask = Image.fromarray(mask).resize(target_size, Image.NEAREST)
+        mask = np.array(mask)
 
-train_dataset = train_dataset.map(preprocess_train, batched=False)
-valid_dataset = valid_dataset.map(preprocess_val, batched=False)
+        # Preprocess with SegFormer's processor
+        inputs = self.processor(images=image, segmentation_maps=mask, return_tensors="pt")
+        
+        # Remove batch dimension and ensure proper tensor types
+        pixel_values = inputs["pixel_values"].squeeze(0)
+        labels = inputs["labels"].squeeze(0).long()
+        
+        return {
+            "pixel_values": pixel_values,
+            "labels": labels
+        }
+
+# -----------------------------
+# 4. Create train/val/test datasets
+# -----------------------------
+train_dataset = COCOSegmentationDataset(
+    img_dir="dataset/train", ann_file="dataset/train/_annotations.coco.json", processor=processor
+)
+valid_dataset = COCOSegmentationDataset(
+    img_dir="dataset/valid", ann_file="dataset/valid/_annotations.coco.json", processor=processor
+)
+test_dataset = COCOSegmentationDataset(
+    img_dir="dataset/test", ann_file="dataset/test/_annotations.coco.json", processor=processor
+)
 
 # -----------------------------
 # 5. Training setup
 # -----------------------------
 training_args = TrainingArguments(
     output_dir="./results",
-    per_device_train_batch_size=2,
-    per_device_eval_batch_size=2,
+    per_device_train_batch_size=1,  # Reduced batch size to avoid memory issues
+    per_device_eval_batch_size=1,
     learning_rate=5e-5,
-    num_train_epochs=20,
-    evaluation_strategy="epoch",
-    save_strategy="epoch",
+    num_train_epochs=5,  # Reduced epochs for faster testing
+    do_eval=True,
+    save_total_limit=2,
+    eval_strategy="steps",  # Fixed: changed from evaluation_strategy
+    eval_steps=500,
+    save_strategy="steps", 
+    save_steps=500,
     logging_dir="./logs",
     logging_steps=50,
-    report_to="none"  # disable wandb/mlflow unless you want them
+    report_to="none",  # disable wandb/mlflow unless you want them
+    dataloader_pin_memory=False  # Disable pin_memory for MPS compatibility
 )
 
 # -----------------------------
-# 6. Define Trainer
+# 6. Metrics
 # -----------------------------
 def compute_metrics(eval_pred):
-    # Simple pixel accuracy (you can add Dice, IoU later)
     logits, labels = eval_pred
     preds = np.argmax(logits, axis=1)
+    # Flatten for proper comparison
+    preds = preds.flatten()
+    labels = labels.flatten()
     acc = (preds == labels).astype(np.float32).mean()
     return {"accuracy": acc}
 
+# -----------------------------
+# 7. Trainer
+# -----------------------------
 trainer = Trainer(
     model=model,
     args=training_args,
     train_dataset=train_dataset,
     eval_dataset=valid_dataset,
-    tokenizer=processor,
     compute_metrics=compute_metrics,
 )
 
 # -----------------------------
-# 7. Train!
+# 8. Train!
 # -----------------------------
 trainer.train()
