@@ -7,6 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 from model import VGG16CariesDetectionNet, get_transforms
+from segformer_model import SegFormerCariesDetection
 
 # Page configuration
 st.set_page_config(
@@ -454,38 +455,62 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 @st.cache_resource
-def load_model():
+def load_model(model_type="vgg16"):
     """Load the trained model"""
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = VGG16CariesDetectionNet(num_classes=2, pretrained=False, enable_localization=True)
-
-    if os.path.exists('final_vgg16_caries_model.pth'):
-        model.load_state_dict(torch.load('final_vgg16_caries_model.pth', map_location=device))
-        model.eval()
     
-    model.to(device)
+    if model_type == "segformer":
+        # Load SegFormer model from trained checkpoint
+        try:
+            model = SegFormerCariesDetection(model_path='./results/checkpoint-26955')
+            return model, device
+        except Exception as e:
+            st.error(f"Error loading SegFormer model: {str(e)}")
+            # Fall back to VGG16 if SegFormer fails
+            model_type = "vgg16"
+    
+    if model_type == "vgg16":
+        # Load VGG16 model (original implementation)
+        model = VGG16CariesDetectionNet(num_classes=2, pretrained=False, enable_localization=True)
+        if os.path.exists('final_vgg16_caries_model.pth'):
+            model.load_state_dict(torch.load('final_vgg16_caries_model.pth', map_location=device))
+            model.eval()
+        model.to(device)
+    
     return model, device
 
-def analyze_image(model, image, device):
+def analyze_image(model, image, device, model_type="vgg16"):
     """Analyze image for caries"""
-    _, val_transform = get_transforms()
-    
-    if image.mode != 'RGB':
-        image = image.convert('RGB')
-    
-    input_tensor = val_transform(image).unsqueeze(0).to(device)
-    
-    with torch.no_grad():
-        outputs = model(input_tensor)
-        probabilities = F.softmax(outputs['classification'], dim=1)
-        predicted_class = torch.argmax(probabilities, dim=1).item()
-        confidence = probabilities[0, predicted_class].item()
+    # First, check the object type of the model to determine how to handle it
+    if model_type == "segformer" and hasattr(model, 'predict'):
+        # Use SegFormer model's predict function directly
+        result = model.predict(image)
+        return (
+            result['predicted_class'],
+            result['confidence'],
+            result['caries_prob'],
+            result['attention_map']
+        )
+    else:
+        # Original VGG16 inference or fallback for any model without predict method
+        _, val_transform = get_transforms()
         
-        attention_map = None
-        if 'attention' in outputs:
-            attention_map = outputs['attention'][0, 0].cpu().numpy()
-    
-    return predicted_class, confidence, probabilities[0][1].item(), attention_map
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+        
+        input_tensor = val_transform(image).unsqueeze(0).to(device)
+        
+        with torch.no_grad():
+            outputs = model(input_tensor)
+            probabilities = F.softmax(outputs['classification'], dim=1)
+            predicted_class = torch.argmax(probabilities, dim=1).item()
+            confidence = probabilities[0, predicted_class].item()
+            
+            attention_map = None
+            if 'attention' in outputs:
+                attention_map = outputs['attention'][0, 0].cpu().numpy()
+        
+        return predicted_class, confidence, probabilities[0][1].item(), attention_map
 
 def show_results(image, predicted_class, confidence, caries_prob, attention_map):
     """Display analysis results with elegant styling and organized layout"""
@@ -662,25 +687,37 @@ def main():
         <div class="hero-subtitle">Advanced Machine Learning for Dental Diagnostics</div>
         <div class="hero-description">
             Leverage cutting-edge artificial intelligence to detect dental caries with high precision. 
-            Our ResNet50-based deep learning model provides instant analysis with confidence scoring and attention mapping.
+            Our advanced deep learning models provide instant analysis with confidence scoring and attention mapping.
         </div>
         <br>
         <div>
             <span class="tech-badge">PyTorch</span>
             <span class="tech-badge">Computer Vision</span>
-            <span class="tech-badge">ResNet50</span>
-            <span class="tech-badge">Attention Mechanism</span>
+            <span class="tech-badge">SegFormer</span>
+            <span class="tech-badge">VGG16</span>
+            <span class="tech-badge">Semantic Segmentation</span>
         </div>
     </div>
     """, unsafe_allow_html=True)
     
+    # Model selection
+    st.markdown('<div class="upload-section">', unsafe_allow_html=True)
+    st.markdown("### 🧠 **Select AI Model**")
+    model_type = st.selectbox(
+        "Choose AI model for analysis",
+        options=["segformer", "vgg16"],
+        format_func=lambda x: "SegFormer (Semantic Segmentation)" if x == "segformer" else "VGG16 (Classification)",
+        help="SegFormer provides pixel-level segmentation, VGG16 provides classification with attention"
+    )
+    st.markdown('</div>', unsafe_allow_html=True)
+    
     # Load model with professional error handling
     try:
-        with st.spinner("🤖 Loading AI model..."):
-            model, device = load_model()
-        st.success("✅ AI model loaded successfully")
+        with st.spinner(f"🤖 Loading {model_type.upper()} AI model..."):
+            model, device = load_model(model_type)
+        st.success(f"✅ {model_type.upper()} AI model loaded successfully")
     except Exception as e:
-        st.error("❌ Could not load AI model. Please check model file.")
+        st.error(f"❌ Could not load {model_type.upper()} model. Please check model file.")
         st.exception(e)
         return
     
@@ -723,10 +760,12 @@ def main():
             status_text.text("🔄 Preprocessing image...")
             progress_bar.progress(25)
             
-            status_text.text("🧠 Running AI inference...")
+            status_text.text(f"🧠 Running {model_type.upper()} AI inference...")
             progress_bar.progress(50)
             
-            predicted_class, confidence, caries_prob, attention_map = analyze_image(model, image, device)
+            predicted_class, confidence, caries_prob, attention_map = analyze_image(
+                model, image, device, model_type=model_type
+            )
             
             status_text.text("📊 Generating results...")
             progress_bar.progress(75)
@@ -766,7 +805,7 @@ def main():
         Always consult with a qualified dentist for accurate diagnosis and treatment planning.</p>
         <br>
         <p style="font-size: 0.9rem; opacity: 0.7; color: #64748b;">
-            Powered by PyTorch • ResNet50 Architecture • Attention Mechanism
+            Powered by PyTorch • SegFormer/VGG16 Architecture • Semantic Segmentation
         </p>
     </div>
     """, unsafe_allow_html=True)

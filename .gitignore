@@ -14,3 +14,4 @@ train/
 valid/
 runs/
 output_segmentation/
+results/

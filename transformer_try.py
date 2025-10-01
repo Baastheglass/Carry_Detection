@@ -114,10 +114,45 @@ training_args = TrainingArguments(
 # -----------------------------
 def compute_metrics(eval_pred):
     logits, labels = eval_pred
+    
+    # Debug: print shapes to understand the format
+    print(f"Logits shape: {logits.shape}")
+    print(f"Labels shape: {labels.shape}")
+    
+    # SegFormer outputs logits with shape (batch_size, num_classes, height, width)
+    # We need to take argmax along the class dimension (axis=1)
     preds = np.argmax(logits, axis=1)
-    # Flatten for proper comparison
-    preds = preds.flatten()
-    labels = labels.flatten()
+    print(f"Preds shape after argmax: {preds.shape}")
+    
+    # Ensure labels and preds have the same shape
+    if len(labels.shape) == 4:  # If labels have batch dimension
+        labels = labels.squeeze(1)  # Remove class dimension if it exists
+    
+    # Resize predictions to match labels if needed
+    if preds.shape != labels.shape:
+        # If shapes don't match, flatten both completely
+        preds = preds.flatten()
+        labels = labels.flatten()
+        
+        # Take only the minimum length to ensure compatibility
+        min_len = min(len(preds), len(labels))
+        preds = preds[:min_len]
+        labels = labels[:min_len]
+    else:
+        # Flatten both if shapes match
+        preds = preds.flatten()
+        labels = labels.flatten()
+    
+    print(f"Final preds shape: {preds.shape}")
+    print(f"Final labels shape: {labels.shape}")
+    
+    # Remove ignore_index pixels if any (usually 255)
+    valid_mask = labels != 255
+    if valid_mask.sum() > 0:
+        preds = preds[valid_mask]
+        labels = labels[valid_mask]
+    
+    # Calculate accuracy
     acc = (preds == labels).astype(np.float32).mean()
     return {"accuracy": acc}
 
